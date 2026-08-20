@@ -1,0 +1,8 @@
+blockExoticSubdeps: false
+
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  '@scarf/scarf': false
+  esbuild: true
+  prisma: true

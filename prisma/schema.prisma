@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// 儲存所有 TPEx OpenAPI 的原始 JSON 回應，作為備份與重跑的基礎。
+/// - dataset: 來源端點的 dataset 名稱，例如 "MAINBOARD_DAILY_CLOSE_QUOTES"。
+model TpexRaw {
+  id        BigInt   @id @default(autoincrement())
+  dataset   String
+  tradeDate DateTime @db.Date
+  fetchedAt DateTime @default(now())
+  payload   Json
+
+  @@unique([dataset, tradeDate])
+  @@map("tpex_raw")
+}
+
+/// 正規化後的每日價量資料。
+/// Change（漲跌價差）刻意不存：能從前後兩天存好的 close 算出來，不屬於「抓不到就永久消失」的資料。
+/// 資料來源:
+/// - /tpex_mainboard_daily_close_quotes (開、高、低、收、成交股數、成交金額、成交筆數)
+model DailyPrice {
+  symbol      String
+  tradeDate   DateTime @db.Date
+  open        Decimal? @db.Decimal(10, 4)
+  high        Decimal? @db.Decimal(10, 4)
+  low         Decimal? @db.Decimal(10, 4)
+  close       Decimal? @db.Decimal(10, 4)
+  volume      BigInt?
+  turnover    BigInt?
+  transaction BigInt?
+
+  @@id([symbol, tradeDate])
+  @@map("daily_price")
+}
+
+/// 正規化後的每日估值資料。與價格分開存，因為缺值模式不同（虧損公司沒有本益比、
+/// 沒發股利的殖利率是 0，這跟「沒抓到」不是一回事）。
+/// 資料來源:
+/// - /tpex_mainboard_peratio_analysis (本益比、殖利率、股價淨值比)
+model DailyValuation {
+  symbol        String
+  tradeDate     DateTime @db.Date
+  peRatio       Decimal? @db.Decimal(10, 2)
+  pbRatio       Decimal? @db.Decimal(10, 2)
+  dividendYield Decimal? @db.Decimal(10, 2)
+
+  @@id([symbol, tradeDate])
+  @@map("daily_valuation")
+}
+
+/// 上櫃 / 興櫃公司基本資料。快照式資料（一間公司一列，重抓就整列覆蓋），不是時間序列——
+/// TPEx OpenAPI 本來就只給「今天」的資料，這裡不試圖保留歷史版本。
+/// 上櫃 (mopsfin_t187ap03_O) 跟興櫃 (mopsfin_t187ap03_R) 兩個來源欄位結構完全一樣、
+/// 公司代號不重疊，因此共用同一張表，用 symbol 當主鍵。
+/// 資料來源:
+/// - /mopsfin_t187ap03_O (上櫃股票基本資料)
+/// - /mopsfin_t187ap03_R (興櫃股票基本資料)
+model CompanyProfile {
+  symbol                     String    @id
+  reportDate                 DateTime  @db.Date @map("report_date")
+  name                       String
+  shortName                  String    @map("short_name")
+  foreignRegistrationCountry String?   @map("foreign_registration_country")
+  industry                   String
+  address                    String
+  taxId                      String    @map("tax_id")
+  chairman                   String
+  generalManager             String    @map("general_manager")
+  spokesperson               String
+  spokespersonTitle          String    @map("spokesperson_title")
+  deputySpokesperson         String?   @map("deputy_spokesperson")
+  phone                      String
+  establishedDate            DateTime? @db.Date @map("established_date")
+  listedDate                 DateTime? @db.Date @map("listed_date")
+  parValue                   Decimal?  @db.Decimal(14, 4) @map("par_value")
+  paidInCapital               BigInt?   @map("paid_in_capital")
+  privatePlacementShares      BigInt?   @map("private_placement_shares")
+  preferredStockShares        BigInt?   @map("preferred_stock_shares")
+  financialReportType         String    @map("financial_report_type")
+  stockTransferAgency         String    @map("stock_transfer_agency")
+  transferAgencyPhone         String    @map("transfer_agency_phone")
+  transferAgencyAddress       String    @map("transfer_agency_address")
+  auditingFirm                 String    @map("auditing_firm")
+  auditor1                     String    @map("auditor1")
+  auditor2                     String?   @map("auditor2")
+  englishShortName             String    @map("english_short_name")
+  faxNumber                     String?   @map("fax_number")
+  email                          String?
+  website                        String?
+  issuedShares                   BigInt?   @map("issued_shares")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("company_profile")
+}
